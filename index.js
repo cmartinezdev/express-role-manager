@@ -1,1 +1,1 @@
-module.exports = require('./src/express-role-manager');
+module.exports = require('./lib/express-role-manager');
