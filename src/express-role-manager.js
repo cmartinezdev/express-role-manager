@@ -38,6 +38,20 @@ function ExpressRoleManager(conf){
 
     /**
      * Returns a middleware that runs functions based on roles
+     * Command format:
+     * [
+     *   {
+     *      roles: [],
+     *      command: function(req, res, next){}
+     *   },
+     *   ...
+     * ]
+     * or
+     * {
+     *   role1: function(req, res, next),
+     *   role2: function(req, res, next),
+     *   ...
+     * }
      */
     this.commandPerRole = function(commands, conf){
         // Get exec config
@@ -46,12 +60,17 @@ function ExpressRoleManager(conf){
         // Generate express middleware
         return (req, res, next) => {
             // Load requester roles in request object
-            this._loadRequestRoles(req);
+            let roles = this._loadRequestRoles(req);
             
-            // TODO run command
             console.log("Roles: ", req._expressRoleManager.roles);
+            console.log("Commands: ", commands);
 
-            localConf.defaultCommand(req, res, next);
+            if(Array.isArray(commands))
+                handleArrayCommands(roles, commands, localConf, req, res, next)
+            else if(typeof commands === 'object')
+                handleObjectCommands(roles, commands, localConf, req, res, next)
+            else
+                localConf.defaultCommand(req, res, next);
         }
     }
 
@@ -61,6 +80,7 @@ function ExpressRoleManager(conf){
     this._loadRequestRoles = function(req) {
         req._expressRoleManager = {};
         req._expressRoleManager.roles = this._obtainRequestRoles(req);
+        return req._expressRoleManager.roles;
     }
 
     /**
@@ -75,7 +95,8 @@ function ExpressRoleManager(conf){
                 return roles.push(roleGetter.role);
 
             // Handle function role getters
-            if(typeof roleGetter !== 'function') return;
+            if(typeof roleGetter !== 'function')
+                return;
             var rolesRes = roleGetter(req);
             if(typeof rolesRes === 'number' || typeof rolesRes === 'string')
                 return roles.push(rolesRes);
@@ -83,5 +104,34 @@ function ExpressRoleManager(conf){
         });
 
         return roles;
+    }
+
+    function handleArrayCommands(roles, commands, localConf, req, res, next){
+        let commandsToRun = [];
+
+        commands.forEach(commandData => {
+            // TODO
+        });
+       
+        runCommands(commandsToRun, localConf, req, res, next);
+    }
+
+    function handleObjectCommands(roles, commands, localConf, req, res, next){
+        let commandsToRun = [];
+  
+        for(let role in commands)
+            if(roles.indexOf(role) >= 0) commandsToRun.push(commands[role]);
+        
+        runCommands(commandsToRun, localConf, req, res, next);
+    }
+
+    function runCommands(commandsToRun, localConf, req, res, next){
+        if(!commandsToRun.length)
+            return localConf.defaultCommand(req, res, next);
+
+        if(!localConf.callAllCommands)
+            return commandsToRun[0](req, res, next);
+
+        commandsToRun.forEach(command => command(req, res, next));
     }
 }
