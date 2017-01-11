@@ -62,15 +62,16 @@ function ExpressRoleManager(conf){
             // Load requester roles in request object
             let roles = this._loadRequestRoles(req);
             
-            console.log("Roles: ", req._expressRoleManager.roles);
-            console.log("Commands: ", commands);
-
+            // Handle the comands based on type
+            let commandsToRun;
             if(Array.isArray(commands))
-                handleArrayCommands(roles, commands, localConf, req, res, next)
+                commandsToRun = handleArrayCommands(roles, commands)
             else if(typeof commands === 'object')
-                handleObjectCommands(roles, commands, localConf, req, res, next)
+                commandsToRun = handleObjectCommands(roles, commands)
             else
-                localConf.defaultCommand(req, res, next);
+                commandsToRun = [];
+
+            runCommands(commandsToRun, localConf, req, res, next)
         }
     }
 
@@ -87,7 +88,7 @@ function ExpressRoleManager(conf){
      * Obtains roles from request
      */
     this._obtainRequestRoles = function(req) {
-        var roles = [];
+        let roles = [];
 
         this._roleGetters.forEach(roleGetter => {
             // Handle key:function role getters
@@ -95,43 +96,69 @@ function ExpressRoleManager(conf){
                 return roles.push(roleGetter.role);
 
             // Handle function role getters
-            if(typeof roleGetter !== 'function')
-                return;
-            var rolesRes = roleGetter(req);
-            if(typeof rolesRes === 'number' || typeof rolesRes === 'string')
-                return roles.push(rolesRes);
-            roles = roles.concat(rolesRes);
+            if(typeof roleGetter === 'function'){
+                let rolesRes = roleGetter(req);
+                // If returns number or string
+                if(typeof rolesRes === 'number' || typeof rolesRes === 'string')
+                    return roles.push(rolesRes);
+                // If returns array
+                roles = roles.concat(rolesRes);
+            }
         });
 
         return roles;
     }
 
-    function handleArrayCommands(roles, commands, localConf, req, res, next){
+    /**
+     * Handles the commands with format:
+     * [
+     *   {
+     *      roles: [],
+     *      command: function(req, res, next){}
+     *   },
+     *   ...
+     * ]
+     */
+    function handleArrayCommands(roles, commands){
         let commandsToRun = [];
 
+        // Find commands
         commands.forEach(commandData => {
-            // TODO
+            if(!commandData.roles.find(role => roles.indexOf(role) < 0))
+                commandsToRun.push(commandData.command);
         });
        
-        runCommands(commandsToRun, localConf, req, res, next);
+        return commandsToRun;
     }
 
-    function handleObjectCommands(roles, commands, localConf, req, res, next){
+    /**
+     * Handles the commands with format:
+     * {
+     *   role1: function(req, res, next),
+     *   role2: function(req, res, next),
+     *   ...
+     * }
+     */
+    function handleObjectCommands(roles, commands){
         let commandsToRun = [];
   
+        // Find commands
         for(let role in commands)
             if(roles.indexOf(role) >= 0) commandsToRun.push(commands[role]);
         
-        runCommands(commandsToRun, localConf, req, res, next);
+        return commandsToRun;
     }
 
     function runCommands(commandsToRun, localConf, req, res, next){
+        // If no commands found with request roles
         if(!commandsToRun.length)
             return localConf.defaultCommand(req, res, next);
 
+        // If callAllCommands is disabled
         if(!localConf.callAllCommands)
             return commandsToRun[0](req, res, next);
 
+        // If callAllCommands is enabled
         commandsToRun.forEach(command => command(req, res, next));
     }
 }
